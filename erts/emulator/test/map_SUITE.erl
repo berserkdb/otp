@@ -95,6 +95,7 @@
 
 %% Benchmarks
 -export([benchmarks/1]).
+-export([t_deterministic_atom_order/1, build_atom_keyed_maps/1]).
 
 %% Helper for generating new colliding keys after the internal hashing
 %% algorithm changes.
@@ -133,6 +134,7 @@ groups() ->
        t_update_deep,
        t_map_equal, t_map_compare,
        t_map_sort_literals,
+       t_deterministic_atom_order,
 
        %% Specific Map BIFs
        t_bif_map_get,t_bif_map_find,t_bif_map_is_key,
@@ -3529,6 +3531,49 @@ t_gc_rare_map_overflow(Config) when is_list(Config) ->
 	erts_debug:set_internal_state(available_internal_state, false),
 	peer:stop(Peer)
     end.
+
+%% With +zdao, the layout of an atom-keyed map depends on the atoms' names
+%% alone, so two nodes that created the atoms in different orders agree on
+%% the order of every map operation, and the maps still behave as maps.
+t_deterministic_atom_order(Config) when is_list(Config) ->
+    Pa = filename:dirname(code:which(?MODULE)),
+    Run = fun(Order) ->
+                  {ok, Peer, _Node} = peer:start(#{connection => 0,
+                                                  args => ["-pa", Pa, "+zdao", "true"]}),
+                  try
+                      peer:call(Peer, ?MODULE, build_atom_keyed_maps, [Order])
+                  after
+                      peer:stop(Peer)
+                  end
+          end,
+    Forward = Run(forward),
+    Reverse = Run(reverse),
+    Forward = Reverse,
+    {_, SmallKeys, _, _, _, _} = Forward,
+    SmallKeys = lists:sort(SmallKeys),
+    ok.
+
+%% Creates the atoms in the given order, then builds and checks maps keyed by
+%% them. Run on a peer node so the atoms are new to it.
+build_atom_keyed_maps(Order) ->
+    Names = ["zdao_" ++ integer_to_list(I) || I <- lists:seq(1, 100)],
+    Created = case Order of
+                  forward -> Names;
+                  reverse -> lists:reverse(Names)
+              end,
+    _ = [list_to_atom(N) || N <- Created],
+    Keys = [list_to_atom(N) || N <- Names],
+    Large = maps:from_list([{K, 1} || K <- Keys]),
+    Small = maps:from_list([{K, 1} || K <- lists:sublist(Keys, 20)]),
+    Nested = maps:from_list([{{K, [K]}, 1} || K <- Keys]),
+    100 = map_size(Large),
+    true = lists:all(fun(K) -> maps:get(K, Large, none) =:= 1 end, Keys),
+    true = lists:all(fun(K) -> maps:get({K, [K]}, Nested, none) =:= 1 end, Keys),
+    true = Small =:= binary_to_term(term_to_binary(Small)),
+    true = Large =:= binary_to_term(term_to_binary(Large)),
+    {maps:keys(Large), maps:keys(Small), maps:keys(Nested),
+     term_to_binary(Large), term_to_binary(Small),
+     lists:sort(maps:to_list(Large))}.
 
 t_gc_rare_map_overflow_do(Echo, FatMap, GcFun) ->
     Master = self(),

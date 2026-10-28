@@ -59,6 +59,9 @@ typedef struct atom {
 } Atom;
 
 extern IndexTable erts_atom_table;
+/* Name hash of each atom, indexed by atom index. Written once when the
+ * atom is created, under the atom table write lock. */
+extern Uint32 *erts_atom_name_hashes;
 
 ERTS_GLB_INLINE Atom* atom_tab(Uint i);
 ERTS_GLB_INLINE int erts_is_atom_utf8_bytes(byte *text, size_t len, Eterm term);

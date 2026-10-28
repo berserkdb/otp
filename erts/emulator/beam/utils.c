@@ -1532,6 +1532,18 @@ not_equal:
     return 0;
 }
 
+/* ERTS_UINT_MAX marks the end of an array and sorts after every atom. */
+static ERTS_INLINE int flatmap_atom_order(Eterm a, Eterm b)
+{
+    if (a == b)
+        return 0;
+    if (a == ERTS_UINT_MAX)
+        return +1;
+    if (b == ERTS_UINT_MAX)
+        return -1;
+    return erts_cmp_flatmap_atoms(a, b) < 0 ? -1 : +1;
+}
+
 static
 Sint compare_flatmap_atom_keys(const Eterm* a_keys,
                                const Eterm* b_keys,
@@ -1558,10 +1570,10 @@ Sint compare_flatmap_atom_keys(const Eterm* a_keys,
 
     /*
      * Found atom key diff. Find the smallest unique atom.
-     * The atoms are sorted by atom index (not term order).
+     * The atoms are sorted by erts_cmp_flatmap_atoms (not term order).
      *
      * Continue iterate atom key arrays by always advancing the one lagging
-     * behind atom index-wise. Identical atoms are skipped. An atom can only be
+     * behind in that order. Identical atoms are skipped. An atom can only be
      * candidate as minimal if we have passed that atom index in the other array
      * (which means the atom did not exist in the other array).
      *
@@ -1585,7 +1597,9 @@ Sint compare_flatmap_atom_keys(const Eterm* a_keys,
 	ASSERT(is_atom(b) || b == ERTS_UINT_MAX);
         ASSERT(is_atom(a) || is_atom(b));
 
-        if (a < b) {
+        int c = flatmap_atom_order(a, b);
+
+        if (c < 0) {
             ASSERT(ai && is_atom(a));
             if (is_non_value(min_key) || erts_cmp_atoms(a, min_key) < 0) {
                 min_key = a;
@@ -1599,7 +1613,7 @@ Sint compare_flatmap_atom_keys(const Eterm* a_keys,
             else
                 a = ERTS_UINT_MAX;
         }
-        else if (a > b) {
+        else if (c > 0) {
             ASSERT(bi && is_atom(b));
             if (is_non_value(min_key) || erts_cmp_atoms(b, min_key) < 0) {
                 min_key = b;

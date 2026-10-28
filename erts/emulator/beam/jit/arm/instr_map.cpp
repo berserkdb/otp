@@ -41,22 +41,24 @@ extern "C"
 void BeamGlobalAssembler::emit_internal_hash_helper() {
     a64::Gp key = ARG2, key_hash = ARG3;
 
-    /* key_hash = key ^ (key >> 33); */
-    a.eor(key_hash, key, key, a64::lsr(33));
+    /* Atoms hash by their name hash, see ihash_immediate_word() in
+     * erl_term_hashing.c. This prototype does not inline that lookup on ARM
+     * yet, so it defers to the runtime system's implementation. */
+    emit_enter_runtime_frame();
+    emit_enter_runtime();
 
-    /* key_hash *= 0xFF51AFD7ED558CCDull */
-    mov_imm(TMP1, 0xFF51AFD7ED558CCDull);
-    a.mul(key_hash, key_hash, TMP1);
+    a.stp(ARG1, ARG2, TMP_MEM1q);
+    a.str(ARG4, TMP_MEM3q);
 
-    /* key_hash ^= key_hash >> 33; */
-    a.eor(key_hash, key_hash, key_hash, a64::lsr(33));
+    a.mov(ARG1, key);
+    runtime_call<erts_ihash_t (*)(Eterm), erts_internal_hash>();
+    a.mov(key_hash, ARG1);
 
-    /* key_hash *= 0xC4CEB9FE1A85EC53ull */
-    mov_imm(TMP1, 0xC4CEB9FE1A85EC53ull);
-    a.mul(key_hash, key_hash, TMP1);
+    a.ldp(ARG1, ARG2, TMP_MEM1q);
+    a.ldr(ARG4, TMP_MEM3q);
 
-    /* key_hash ^= key_hash >> 33; */
-    a.eor(key_hash, key_hash, key_hash, a64::lsr(33));
+    emit_leave_runtime();
+    emit_leave_runtime_frame();
 
 #ifdef DBG_HASHMAP_COLLISION_BONANZA
     emit_enter_runtime_frame();

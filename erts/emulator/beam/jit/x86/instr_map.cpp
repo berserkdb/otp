@@ -49,10 +49,30 @@ void BeamGlobalAssembler::emit_internal_hash_helper() {
         ASSERT(key_hash == x86::rdx);
     }
 
-    /* key_hash = key ^ (key >> 33); */
-    a.mov(ARG4, ARG2);
+    /* An atom hashes by its name hash rather than by its atom table index,
+     * see ihash_immediate_word() in erl_term_hashing.c. */
+    {
+        Label not_atom = a.new_label();
+
+        a.mov(x86::rdx, ARG2);
+        a.mov(ARG4, ARG2);
+        a.and_(ARG4d, imm(_TAG_IMMED2_MASK));
+        a.cmp(ARG4d, imm(_TAG_IMMED2_ATOM));
+        a.jne(not_atom);
+
+        a.shr(x86::rdx, imm(_TAG_IMMED2_SIZE));
+        mov_imm(ARG6, (UWord)&erts_atom_name_hashes);
+        a.mov(ARG6, x86::qword_ptr(ARG6));
+        a.mov(x86::edx, x86::dword_ptr(ARG6, x86::rdx, 2));
+        a.shl(x86::rdx, imm(_TAG_IMMED2_SIZE));
+        a.or_(x86::rdx, imm(_TAG_IMMED2_ATOM));
+
+        a.bind(not_atom);
+    }
+
+    /* key_hash = word ^ (word >> 33); */
+    a.mov(ARG4, x86::rdx);
     a.shr(ARG4, imm(33));
-    a.mov(x86::rdx, ARG2);
     a.xor_(x86::rdx, ARG4);
 
     /* `RDX * ARG6` storing a 128 bit result in ARG4:RDX. We only want the

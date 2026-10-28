@@ -331,6 +331,7 @@ erts_atom_put_index(const byte *name, Sint len, ErtsAtomEncoding enc, int trunc)
     a.u.name = (byte *) text;
     atom_write_lock();
     aix = index_put(&erts_atom_table, (void*) &a);
+    erts_atom_name_hashes[aix] = (Uint32)atom_tab(aix)->slot.bucket.hvalue;
     atom_write_unlock();
     return aix;
 }
@@ -448,6 +449,8 @@ erts_atom_get_text_space_sizes(Uint *reserved, Uint *used)
 	atom_read_unlock();
 }
 
+Uint32 *erts_atom_name_hashes;
+
 void
 init_atom_table(void)
 {
@@ -476,6 +479,8 @@ init_atom_table(void)
 
     erts_index_init(ERTS_ALC_T_ATOM_TABLE, &erts_atom_table,
 		    "atom_tab", ATOM_SIZE, erts_atom_table_size, f);
+    erts_atom_name_hashes = erts_alloc(ERTS_ALC_T_ATOM_TABLE,
+                                       erts_atom_table_size * sizeof(Uint32));
 
     /* Ordinary atoms. a is a template for creating an entry in the atom table */
     for (i = 0; erl_atom_names[i] != 0; i++) {
@@ -493,7 +498,7 @@ init_atom_table(void)
 	}
 #endif
 	ix = index_put(&erts_atom_table, (void*) &a);
-    (void) ix;
+    erts_atom_name_hashes[ix] = (Uint32)atom_tab(ix)->slot.bucket.hvalue;
     /* Assert that the entry in the atom table is not a template */
     ASSERT(erts_atom_get_name(atom_tab(ix)));
     }
